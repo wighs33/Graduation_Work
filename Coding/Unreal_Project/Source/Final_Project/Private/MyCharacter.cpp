@@ -324,6 +324,8 @@ AMyCharacter::AMyCharacter()
 		}
 	}
 
+	SettingHead();
+
 	GetCharacterMovement()->JumpZVelocity = 800.0f;
 	isAttacking = false;
 
@@ -349,6 +351,7 @@ AMyCharacter::AMyCharacter()
 	iCurrentMatchCount = 0;
 	bHasUmbrella = false;
 	bHasBag = false;
+	bHasShotgun = false;
 
 	farmingItem = nullptr;
 	bIsFarming = false;
@@ -434,6 +437,11 @@ void AMyCharacter::Tick(float DeltaTime)
 
 	UpdateZByTornado();		// 캐릭터가 토네이도 내부인 경우 z값 증가
 	UpdateControllerRotateByTornado();	// 토네이도로 인한 스턴상태인 경우 회전하도록
+
+	if (bHeadAnimEnd) 
+	{
+		GetWorld()->GetTimerManager().ClearTimer(HeadHandle);
+	}
 }
 
 void AMyCharacter::init_Socket()
@@ -537,14 +545,14 @@ void AMyCharacter::Attack()
 			switch (iSelectedWeapon) {
 			case Weapon::Hand:
 				if (iCurrentSnowballCount <= 0) return;	// 눈덩이를 소유하고 있지 않으면 공격 x
-				PlayerController->SendPlayerInfo(COMMAND_ATTACK);
+				PlayerController->SendPlayerInfo(COMMAND_SNOWBALL);
 				isAttacking = true;
 				break;
 			case Weapon::Shotgun:
 				if (iCurrentSnowballCount < 5) return;	// 눈덩이가 5개 이상 없으면 공격 x
-				PlayerController->SendPlayerInfo(COMMAND_GUNATTACK);
+				PlayerController->SendPlayerInfo(COMMAND_SHOTGUN);
 				MYLOG(Warning, TEXT("gunattack"));
-				//AttackShotgun();
+				//ShotgunAttack();
 				isAttacking = true;
 				break;
 			default:
@@ -553,7 +561,8 @@ void AMyCharacter::Attack()
 			break;
 		case Projectile::Iceball:
 			if (iCurrentIceballCount <= 0) return;	// 아이스볼을 소유하고 있지 않으면 공격 x
-			IceballAttack();
+			PlayerController->SendPlayerInfo(COMMAND_ICEBALL);
+			//IceballAttack();
 			isAttacking = true;
 			break;
 		default:
@@ -561,7 +570,7 @@ void AMyCharacter::Attack()
 		}
 	}
 #ifdef SINGLEPLAY_DEBUG
-	SnowAttack();
+	SnowBallAttack();
 #endif
 }
 
@@ -569,57 +578,18 @@ void AMyCharacter::ReleaseAttack()
 {	// 임시 - 아이스볼로 공격 중 release
 	if (iSelectedProjectile == Projectile::Iceball)
 	{
-		if (myAnim->bThrowing)
-		{
-			myAnim->PlayAttack2MontageSectionEnd();
-		}
-		else
-		{	// 눈덩이를 던지려다가 마우스 버튼을 릴리즈해서 취소된 경우
-			StopAnimMontage();
-			if (iceball)
-			{
-				iceball->Destroy();
-				iceball = nullptr;
-			}
-		}
-
 		if (iSessionId == localPlayerController->iSessionId)
 		{
-
-			localPlayerController->SetViewTargetWithBlend(this, fAimingTime);	// 기존 카메라로 전환
-			localPlayerController->GetHUD()->bShowHUD = true;	// 크로스헤어 보이도록
+			SendCancelAttack(BULLET_ICEBALL);
 		}
-
-		return;
 	}
-
-
-	if (iSessionId == localPlayerController->iSessionId)
+	else
 	{
-		SendReleaseAttack();
+		if (iSessionId == localPlayerController->iSessionId)
+		{
+			SendCancelAttack(BULLET_SNOWBALL);
+		}
 	}
-	//Cancel_SnowBallAttack()로 옮김
-	//자기 자신을 포함하여 서버에서 명령이 오면 작업을 수행하게함
-	//if (myAnim->bThrowing)
-	//{
-	//	myAnim->PlayAttack2MontageSectionEnd();
-	//}
-	//else
-	//{	// 눈덩이를 던지려다가 마우스 버튼을 릴리즈해서 취소된 경우
-	//	StopAnimMontage();
-	//	if (snowball)
-	//	{
-	//		snowball->Destroy();
-	//		snowball = nullptr;
-	//	}
-	//}
-
-	//if (iSessionId == localPlayerController->iSessionId)
-	//{
-	//	
-	//	localPlayerController->SetViewTargetWithBlend(this, fAimingTime);	// 기존 카메라로 전환
-	//	localPlayerController->GetHUD()->bShowHUD = true;	// 크로스헤어 보이도록
-	//}
 }
 
 //자기 자신을 포함하여 서버에서 명령이 오면 작업을 수행하게함
@@ -647,7 +617,35 @@ void AMyCharacter::Cancel_SnowBallAttack()
 	}
 }
 
-void AMyCharacter::SnowAttack()
+//자기 자신을 포함하여 서버에서 명령이 오면 작업을 수행하게함
+void AMyCharacter::Cancel_IceBallAttack()
+{
+	if (iSelectedProjectile == Projectile::Iceball)
+	{
+		if (myAnim->bThrowing)
+		{
+			myAnim->PlayAttack2MontageSectionEnd();
+		}
+		else
+		{	// 눈덩이를 던지려다가 마우스 버튼을 릴리즈해서 취소된 경우
+			StopAnimMontage();
+			if (iceball)
+			{
+				iceball->Destroy();
+				iceball = nullptr;
+			}
+		}
+
+		if (iSessionId == localPlayerController->iSessionId)
+		{
+
+			localPlayerController->SetViewTargetWithBlend(this, fAimingTime);	// 기존 카메라로 전환
+			localPlayerController->GetHUD()->bShowHUD = true;	// 크로스헤어 보이도록
+		}
+	}
+}
+
+void AMyCharacter::SnowBallAttack()
 {
 	//if (bIsSnowman) return;
 	//if (iCurrentSnowballCount <= 0) return;	// 눈덩이를 소유하고 있지 않으면 공격 x
@@ -682,7 +680,7 @@ void AMyCharacter::SnowAttack()
 	}
 }
 
-void AMyCharacter::AttackShotgun()
+void AMyCharacter::ShotgunAttack()
 {
 	MYLOG(Warning, TEXT("AttackShotGun"));
 
@@ -697,7 +695,7 @@ void AMyCharacter::AttackShotgun()
 void AMyCharacter::IceballAttack()
 {
 	//if (bIsSnowman) return;
-	if (iCurrentIceballCount <= 0) return;	// 아이스볼을 소유하고 있지 않으면 공격 x
+	//if (iCurrentIceballCount <= 0) return;	// 아이스볼을 소유하고 있지 않으면 공격 x
 
 	//myAnim->PlayAttackMontage();
 	myAnim->PlayAttack2Montage();
@@ -761,24 +759,58 @@ float AMyCharacter::TakeDamage(float DamageAmount, FDamageEvent const& DamageEve
 	return FinalDamage;
 }
 
-void AMyCharacter::SendReleaseSnowball()
+//발사
+void AMyCharacter::SendReleaseBullet(int bullet)
 {
 	if (iSessionId != localPlayerController->iSessionId) return;
-	if (IsValid(snowball))
-	{
-		localPlayerController->SendPlayerInfo(COMMAND_THROW);
 
+	switch (bullet)
+	{
+	case BULLET_SNOWBALL: {
+		if (IsValid(snowball))
+		{
+			localPlayerController->SendPlayerInfo(COMMAND_THROW_SB);
+		}
+		break;
+	}
+	case BULLET_ICEBALL: {
+		if (IsValid(iceball))
+		{
+			localPlayerController->SendPlayerInfo(COMMAND_THROW_IB);
+		}
+		break;
+	}
+	default:
+		break;
 	}
 }
 
-void AMyCharacter::SendReleaseAttack()
+//공격 취소
+void AMyCharacter::SendCancelAttack(int bullet)
 {
 	if (iSessionId != localPlayerController->iSessionId) return;
-	if (IsValid(snowball))
+	switch (bullet)
 	{
-		localPlayerController->SendPlayerInfo(COMMAND_R_ATTACK);
+	case BULLET_SNOWBALL: {
+		if (IsValid(snowball))
+		{
+			localPlayerController->SendPlayerInfo(COMMAND_CANCEL_SB);
 
+		}
+		break;
 	}
+	case BULLET_ICEBALL: {
+		if (IsValid(iceball))
+		{
+			localPlayerController->SendPlayerInfo(COMMAND_CANCEL_IB);
+
+		}
+		break;
+	}
+	default:
+		break;
+	}
+
 }
 
 
@@ -838,14 +870,39 @@ void AMyCharacter::ReleaseIceball()
 {
 	if (IsValid(iceball))
 	{
-		iCurrentIceballCount -= 1;	// 공격 시 아이스볼 소유량 1 감소
-		UpdateUI(UICategory::CurIceball);
+		//iCurrentIceballCount -= 1;	// 공격 시 아이스볼 소유량 1 감소
+		//UpdateUI(UICategory::CurIceball);
 
 		FDetachmentTransformRules dtr = FDetachmentTransformRules(EDetachmentRule::KeepWorld, false);
 		iceball->DetachFromActor(dtr);
 
 		if (iceball->GetClass()->ImplementsInterface(UI_Throwable::StaticClass()))
 		{
+
+#ifdef MULTIPLAY_DEBUG
+			AMyPlayerController* PlayerController = Cast<AMyPlayerController>(GetWorld()->GetFirstPlayerController());
+			FVector direction_;
+			direction_.X = PlayerController->GetCharactersInfo()->players[iSessionId].fCDx;
+			direction_.Y = PlayerController->GetCharactersInfo()->players[iSessionId].fCDy;
+			direction_.Z = PlayerController->GetCharactersInfo()->players[iSessionId].fCDz;
+			
+			FVector cameraLocation;
+			FRotator cameraRotation;
+			GetActorEyesViewPoint(cameraLocation, cameraRotation);
+
+			cameraRotation.Vector() = direction_;
+
+			float speed = fSnowballInitialSpeed + fAimingElapsedTime * fThrowPower;
+
+			II_Throwable::Execute_IceballThrow(iceball, cameraRotation, speed);
+
+			iceball = nullptr;
+
+			bIsAiming = false;
+			fAimingElapsedTime = 0.0f;
+
+#endif
+#ifdef SINGLEPLAY_DEBUG
 			FVector cameraLocation;
 			FRotator cameraRotation;
 			GetActorEyesViewPoint(cameraLocation, cameraRotation);
@@ -859,6 +916,7 @@ void AMyCharacter::ReleaseIceball()
 
 			bIsAiming = false;
 			fAimingElapsedTime = 0.0f;
+#endif
 		}
 	}
 }
@@ -874,10 +932,6 @@ void AMyCharacter::OnHit(UPrimitiveComponent* HitComponent, AActor* OtherActor, 
 
 	if (nullptr != MySnowball)
 	{
-		auto BoneName = GetMesh()->FindClosestBone(GetActorLocation());
-		MYLOG(Warning, TEXT("%s"), *BoneName.ToString());
-		if (BoneName.ToString() == TEXT("Base-HumanHead") || GetMesh()->GetParentBone(BoneName) == TEXT("Base-HumanHead"))
-			bFreeze = true;
 	}
 	AMyCharacter* otherCharacter = Cast<AMyCharacter>(OtherActor);
 	if (!otherCharacter) return;
@@ -1256,6 +1310,7 @@ void AMyCharacter::ResetHasItems()
 	iMaxMatchCount = iOriginMaxMatchCount;
 	bHasUmbrella = false;
 	bHasBag = false;
+	bHasShotgun = false;
 	bagMeshComponent->SetVisibility(false);
 
 
@@ -1337,6 +1392,9 @@ void AMyCharacter::UpdateUI(int uiCategory, float farmDuration)
 	case UICategory::HasBag:
 		localPlayerController->CallDelegateUpdateHasBag();	// HasBag ui 갱신
 		break;
+	case UICategory::HasShotgun:
+		localPlayerController->CallDelegateUpdateHasShotgun();	// HasShotgun ui 갱신
+		break;
 	case UICategory::IsFarmingSnowdrift:
 		localPlayerController->CallDelegateUpdateIsFarmingSnowdrift();	// snowdrift farming ui visible 갱신
 		break;
@@ -1348,6 +1406,9 @@ void AMyCharacter::UpdateUI(int uiCategory, float farmDuration)
 		break;
 	case UICategory::SelectedProjectile:
 		localPlayerController->CallDelegateUpdateSelectedProjectile();
+		break;
+	case UICategory::SelectedWeapon:
+		localPlayerController->CallDelegateUpdateSelectedWeapon();
 		break;
 	case UICategory::AllOfUI:
 		localPlayerController->CallDelegateUpdateAllOfUI();	// 모든 캐릭터 ui 갱신
@@ -1434,6 +1495,7 @@ void AMyCharacter::UpdateControllerRotateByTornado()
 void AMyCharacter::ChangeWeapon()
 {
 	iSelectedWeapon = (iSelectedWeapon + 1) % iNumOfWeapons;
+	UpdateUI(UICategory::SelectedWeapon);
 }
 
 void AMyCharacter::ChangeProjectile()
@@ -1588,11 +1650,21 @@ void AMyCharacter::Cheat_IncreaseHP()
 void AMyCharacter::Cheat_DecreaseHP()
 {
 	localPlayerController->SendCheatInfo(CHEAT_HP_DOWN);
+
+	// 임시 - 샷건 획득 치트키
+	bHasShotgun = true;
+	UpdateUI(UICategory::HasShotgun);
 }
 void AMyCharacter::Cheat_IncreaseSnowball()
 {
-	localPlayerController->SendCheatInfo(CHEAT_SNOW_PLUS);
-
+	if (iSelectedProjectile == Projectile::Iceball)
+	{
+		localPlayerController->SendCheatInfo(CHEAT_ICE_PLUS);
+	}
+	else 
+	{
+		localPlayerController->SendCheatInfo(CHEAT_SNOW_PLUS);
+	}
 }
 
 void AMyCharacter::ReleaseRightMouseButton()
@@ -1909,4 +1981,155 @@ void AMyCharacter::UpdateJetski()
 		FRotator newRotation = FRotator(pitch, GetActorRotation().Yaw, roll);
 		jetskiMeshComponent->SetWorldRotation(newRotation);
 	}
+}
+
+void AMyCharacter::SettingHead() 
+{
+	heads.Add(head1);
+	heads.Add(head2);
+	heads.Add(head3);
+	heads.Add(head4);
+	heads.Add(head5);
+	heads.Add(head6);
+	heads.Add(head7);
+	heads.Add(head8);
+	heads.Add(head9);
+	heads.Add(head10);
+	heads.Add(head11);
+	heads.Add(head12);
+	heads.Add(head13);
+	heads.Add(head14);
+	heads.Add(head15);
+	heads.Add(head16);
+	heads.Add(head17);
+	heads.Add(head18);
+	heads.Add(head19);
+	heads.Add(head20);
+	heads.Add(head21);
+	heads.Add(head22);
+	heads.Add(head23);
+
+	TArray<const wchar_t*> names;
+	names.Add(TEXT("head1"));
+	names.Add(TEXT("head2"));
+	names.Add(TEXT("head3"));
+	names.Add(TEXT("head4"));
+	names.Add(TEXT("head5"));
+	names.Add(TEXT("head6"));
+	names.Add(TEXT("head7"));
+	names.Add(TEXT("head8"));
+	names.Add(TEXT("head9"));
+	names.Add(TEXT("head10"));
+	names.Add(TEXT("head11"));
+	names.Add(TEXT("head12"));
+	names.Add(TEXT("head13"));
+	names.Add(TEXT("head14"));
+	names.Add(TEXT("head15"));
+	names.Add(TEXT("head16"));
+	names.Add(TEXT("head17"));
+	names.Add(TEXT("head18"));
+	names.Add(TEXT("head19"));
+	names.Add(TEXT("head20"));
+	names.Add(TEXT("head21"));
+	names.Add(TEXT("head22"));
+	names.Add(TEXT("head23"));
+
+	static TArray<ConstructorHelpers::FObjectFinder<UStaticMesh>*> SM_HEADS;
+	static ConstructorHelpers::FObjectFinder<UStaticMesh> SM_HEAD1(TEXT("/Game/FX/Frozen/Meshes/head_2.head_2"));
+	static ConstructorHelpers::FObjectFinder<UStaticMesh> SM_HEAD2(TEXT("/Game/FX/Frozen/Meshes/head_3.head_3"));
+	static ConstructorHelpers::FObjectFinder<UStaticMesh> SM_HEAD3(TEXT("/Game/FX/Frozen/Meshes/head_4.head_4"));
+	static ConstructorHelpers::FObjectFinder<UStaticMesh> SM_HEAD4(TEXT("/Game/FX/Frozen/Meshes/head_5.head_5"));
+	static ConstructorHelpers::FObjectFinder<UStaticMesh> SM_HEAD5(TEXT("/Game/FX/Frozen/Meshes/head_6.head_6"));
+	static ConstructorHelpers::FObjectFinder<UStaticMesh> SM_HEAD6(TEXT("/Game/FX/Frozen/Meshes/head_7.head_7"));
+	static ConstructorHelpers::FObjectFinder<UStaticMesh> SM_HEAD7(TEXT("/Game/FX/Frozen/Meshes/head_8.head_8"));
+	static ConstructorHelpers::FObjectFinder<UStaticMesh> SM_HEAD8(TEXT("/Game/FX/Frozen/Meshes/head_9.head_9"));
+	static ConstructorHelpers::FObjectFinder<UStaticMesh> SM_HEAD9(TEXT("/Game/FX/Frozen/Meshes/head_10.head_10"));
+	static ConstructorHelpers::FObjectFinder<UStaticMesh> SM_HEAD10(TEXT("/Game/FX/Frozen/Meshes/head_11.head_11"));
+	static ConstructorHelpers::FObjectFinder<UStaticMesh> SM_HEAD11(TEXT("/Game/FX/Frozen/Meshes/head_12.head_12"));
+	static ConstructorHelpers::FObjectFinder<UStaticMesh> SM_HEAD12(TEXT("/Game/FX/Frozen/Meshes/head_13.head_13"));
+	static ConstructorHelpers::FObjectFinder<UStaticMesh> SM_HEAD13(TEXT("/Game/FX/Frozen/Meshes/head_14.head_14"));
+	static ConstructorHelpers::FObjectFinder<UStaticMesh> SM_HEAD14(TEXT("/Game/FX/Frozen/Meshes/head_15.head_15"));
+	static ConstructorHelpers::FObjectFinder<UStaticMesh> SM_HEAD15(TEXT("/Game/FX/Frozen/Meshes/head_16.head_16"));
+	static ConstructorHelpers::FObjectFinder<UStaticMesh> SM_HEAD16(TEXT("/Game/FX/Frozen/Meshes/head_17.head_17"));
+	static ConstructorHelpers::FObjectFinder<UStaticMesh> SM_HEAD17(TEXT("/Game/FX/Frozen/Meshes/head_18.head_18"));
+	static ConstructorHelpers::FObjectFinder<UStaticMesh> SM_HEAD18(TEXT("/Game/FX/Frozen/Meshes/head_19.head_19"));
+	static ConstructorHelpers::FObjectFinder<UStaticMesh> SM_HEAD19(TEXT("/Game/FX/Frozen/Meshes/head_20.head_20"));
+	static ConstructorHelpers::FObjectFinder<UStaticMesh> SM_HEAD20(TEXT("/Game/FX/Frozen/Meshes/head_21.head_21"));
+	static ConstructorHelpers::FObjectFinder<UStaticMesh> SM_HEAD21(TEXT("/Game/FX/Frozen/Meshes/head_22.head_22"));
+	static ConstructorHelpers::FObjectFinder<UStaticMesh> SM_HEAD22(TEXT("/Game/FX/Frozen/Meshes/head_23.head_23"));
+	static ConstructorHelpers::FObjectFinder<UStaticMesh> SM_HEAD23(TEXT("/Game/FX/Frozen/Meshes/head_24.head_24"));
+	SM_HEADS.Add(&SM_HEAD1);
+	SM_HEADS.Add(&SM_HEAD2);
+	SM_HEADS.Add(&SM_HEAD3);
+	SM_HEADS.Add(&SM_HEAD4);
+	SM_HEADS.Add(&SM_HEAD5);
+	SM_HEADS.Add(&SM_HEAD6);
+	SM_HEADS.Add(&SM_HEAD7);
+	SM_HEADS.Add(&SM_HEAD8);
+	SM_HEADS.Add(&SM_HEAD9);
+	SM_HEADS.Add(&SM_HEAD10);
+	SM_HEADS.Add(&SM_HEAD11);
+	SM_HEADS.Add(&SM_HEAD12);
+	SM_HEADS.Add(&SM_HEAD13);
+	SM_HEADS.Add(&SM_HEAD14);
+	SM_HEADS.Add(&SM_HEAD15);
+	SM_HEADS.Add(&SM_HEAD16);
+	SM_HEADS.Add(&SM_HEAD17);
+	SM_HEADS.Add(&SM_HEAD18);
+	SM_HEADS.Add(&SM_HEAD19);
+	SM_HEADS.Add(&SM_HEAD20);
+	SM_HEADS.Add(&SM_HEAD21);
+	SM_HEADS.Add(&SM_HEAD22);
+	SM_HEADS.Add(&SM_HEAD23);
+
+	for (int i = 0; i < 23; ++i)
+	{
+		if (!heads[i])
+		{
+			heads[i] = CreateDefaultSubobject<UStaticMeshComponent>(names[i]);
+			if (SM_HEADS[i]->Succeeded())
+			{
+				heads[i]->SetStaticMesh(SM_HEADS[i]->Object);
+				heads[i]->BodyInstance.SetCollisionProfileName(TEXT("NoCollision"));
+				heads[i]->SetupAttachment(GetMesh(), TEXT("HeadSocket"));
+				heads[i]->SetVisibility(false);
+			}
+		}
+	}
+}
+
+void AMyCharacter::FreezeHead()
+{
+	float WaitTime = 0.1f;
+	GetWorld()->GetTimerManager().SetTimer(HeadHandle, FTimerDelegate::CreateLambda([&]()
+		{
+			MYLOG(Warning, TEXT("%d"), iHeadFrame);
+
+			for (int i = 0; i < 23; ++i)
+			{
+				if (iHeadFrame == i) {
+					FreezeAnimation(heads, iHeadFrame, bHeadAnimEnd);
+					break;
+				}
+			}
+		}), WaitTime, true);
+}
+
+void AMyCharacter::FreezeAnimation(TArray<UStaticMeshComponent*> bones, int& frame, bool& end)
+{
+	//투명모드 조정
+	if (iHeadFrame != 0)
+		bones[frame - 1]->SetVisibility(false);
+	bones[frame]->SetVisibility(true);
+
+	//머리만 머티리얼로 점점 얼리기
+	if (bones == heads)
+		bones[frame]->CreateDynamicMaterialInstance(1)->SetScalarParameterValue(TEXT("Emissive"), frame * 0.125);
+
+	//배열 끝 판정
+	if (bones.Num() - 1 == frame)
+		end = true;
+		//GetWorld()->GetTimerManager().ClearTimer(FreezeHandle);
+	else
+		frame += 1;
 }
