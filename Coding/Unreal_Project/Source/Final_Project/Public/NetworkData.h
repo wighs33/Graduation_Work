@@ -29,7 +29,7 @@ using std::chrono::milliseconds;
 using std::chrono::seconds;
 using std::chrono::system_clock;
 
-const int32  MAX_NAME_SIZE = 20;
+const int32  MAX_NAME_SIZE = 21;
 const int32  MAX_CHAT_SIZE = 100;
 const int32 BUF_SIZE = 2048;
 const int32 Tornado_id = 100;
@@ -63,6 +63,7 @@ const char CS_PACKET_PLAYER_COUNT = 20;
 const char CS_PACKET_PUT_OBJECT = 21;
 const char CS_PACKET_NPC_MOVE = 22;
 const char CS_PACKET_FREEZE = 23;
+const char CS_PACKET_MATCHING = 24;
 
 
 const char SC_PACKET_LOGIN_OK = 1;

@@ -8,7 +8,7 @@ const short SERVER_PORT = 10001;
 const int32 BUFSIZE = 2048;
 const int32  ReZone_HEIGHT = 2000;
 const int32  ReZone_WIDTH = 2000;
-const int32  MAX_NAME_SIZE = 20;
+const int32  MAX_NAME_SIZE = 21;
 const int32  MAX_CHAT_SIZE = 100;
 const int32  MAX_USER = 100;
 const int32  MAX_NPC = 100;
@@ -41,6 +41,7 @@ const char CS_PACKET_PLAYER_COUNT = 20;
 const char CS_PACKET_PUT_OBJECT = 21;
 const char CS_PACKET_NPC_MOVE = 22;
 const char CS_PACKET_FREEZE = 23;
+const char CS_PACKET_MATCHING = 24;
 
 
 
