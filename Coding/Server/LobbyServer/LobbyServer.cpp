@@ -1,17 +1,19 @@
 #include "pch.h"
-#include "InGameServer.h"
+#include "LobbyServer.h"
 #include "P_Manager.h"
+
+
 using namespace std;
 default_random_engine Dre;
 uniform_int_distribution<> Uid;// 범위 지정
 uniform_int_distribution<> Sprang;// 보급 박스 범위 지정
 
-InGameServer::InGameServer()
+LobbyServer::LobbyServer()
 {
-	
+
 };
 
-void InGameServer::Run()
+void LobbyServer::Run()
 {
 	PM = std::make_unique<PManager>();
 	PM->g_timer = CreateEvent(NULL, FALSE, FALSE, NULL);
@@ -19,7 +21,7 @@ void InGameServer::Run()
 	timer_thread = thread([this]() {ev_timer(); });
 };
 
-void InGameServer::End()
+void LobbyServer::End()
 {
 	JoinThread();
 	timer_thread.join();
@@ -28,7 +30,15 @@ void InGameServer::End()
 	closesocket(sever_socket);
 };
 
-bool InGameServer::OnRecv(int s_id, Overlap* exp_over, DWORD num_byte)
+//void LobbyServer::init_server()
+//{
+//	for (int i = 0; i < MAX_B_SERVER; i++)
+//	{
+//		BattleServers[i] = new BattleServer();
+//	}
+//};
+
+bool LobbyServer::OnRecv(int s_id, Overlap* exp_over, DWORD num_byte)
 {
 	if (num_byte == 0) {
 		cout << "연결종료" << endl;
@@ -54,10 +64,11 @@ bool InGameServer::OnRecv(int s_id, Overlap* exp_over, DWORD num_byte)
 	}
 	if (remain_data == 0)
 		cl._prev_size = 0;
-	cl.do_recv();
+	if(cl.cl_state != ST_SERVER)
+	   cl.do_recv();
 	return true;
 };
-bool InGameServer::OnAccept(Overlap* exp_over)
+bool LobbyServer::OnAccept(Overlap* exp_over)
 {
 	DWORD dwBytes;
 	cout << "Accept Completed.\n";
@@ -93,7 +104,7 @@ bool InGameServer::OnAccept(Overlap* exp_over)
 
 };
 
-bool InGameServer::OnEvent(int s_id, Overlap* exp_over)
+bool LobbyServer::OnEvent(int s_id, Overlap* exp_over)
 {
 	switch (exp_over->_op) {
 
@@ -211,8 +222,19 @@ bool InGameServer::OnEvent(int s_id, Overlap* exp_over)
 	return true;
 };
 
+void LobbyServer::ReStart()
+{
+	PM->g_timer = CreateEvent(NULL, FALSE, FALSE, NULL);
+	reset_server();
+	for (int i = 0; i < MAX_SNOWDRIFT; ++i) GA.g_snow_drift[i] = true;
+	for (int i = 0; i < MAX_SNOWDRIFT; ++i) GA.g_ice_drift[i] = true;
+	for (int i = 0; i < MAX_ITEM; ++i) GA.g_item[i] = true;
+	for (int i = 0; i < MAX_ITEM; ++i) GA.g_spitem[i] = true;
+	for (int i = 0; i < MAX_USER; ++i) clients[i]._s_id = i;
+}
+
 //플레이어 이벤트 등록
-void InGameServer::PutEvent(int target, int player_id, COMMAND type)
+void LobbyServer::PutEvent(int target, int player_id, COMMAND type)
 {
 	if (type == OP_OBJ_SPAWN)
 		cout << "Player_Event " << type << endl;
@@ -225,7 +247,7 @@ void InGameServer::PutEvent(int target, int player_id, COMMAND type)
 
 
 //타이머
-void InGameServer::ev_timer()
+void LobbyServer::ev_timer()
 {
 	WaitForSingleObject(PM->g_timer, INFINITE);
 	{
@@ -283,4 +305,34 @@ void InGameServer::ev_timer()
 		}
 	}
 
+}
+
+bool LobbyServer::Lobby_recv(int s_id, Overlap* exp_over, DWORD num_byte)
+{
+	if (num_byte == 0) {
+		cout << "연결종료" << endl;
+		Disconnect(s_id);
+		return false;
+	}
+	BattleServer& b_server = BattleServers[s_id];
+	int remain_data = num_byte + b_server._prev_size;
+	unsigned char* packet_start = exp_over->_net_buf;
+	int packet_size = packet_start[0];
+
+	while (packet_size <= remain_data) {
+		PM->ProcessServerPacket(s_id, packet_start);
+		remain_data -= packet_size;
+		packet_start += packet_size;
+		if (remain_data > 0) packet_size = packet_start[0];
+		else break;
+	}
+
+	if (0 < remain_data) {
+		b_server._prev_size = remain_data;
+		memcpy(&exp_over->_net_buf, packet_start, remain_data);
+	}
+	if (remain_data == 0)
+		b_server._prev_size = 0;
+	b_server.Lobby_do_recv();
+	return true;
 }
